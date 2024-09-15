@@ -20,63 +20,112 @@ interface Group {
   members: Student[];
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+class Groups {
+  groups: Group[];
+  autoGroupId: number;
+  autoStudentId: number;
+
+  constructor() {
+    this.groups = [];
+    this.autoGroupId = 0;
+    this.autoStudentId = 0;
+  }
+
+  getGroup(id: number): Group | undefined {
+    return this.groups.find(group => group.id == id);
+  }
+
+  getAllGroups(): Group[] {
+    return this.groups;
+  }
+
+  getAllGroupSummaries(): GroupSummary[] {
+    return this.groups.map(this.createGroupSummary);
+  }
+
+  getAllStudents(): Student[] {
+    return this.groups.flatMap(group => group.members);
+  }
+
+  createGroupSummary(group: Group): GroupSummary {
+    return {
+      id: group.id,
+      groupName: group.groupName,
+      members: group.members.map(student => student.id)
+    };
+  }
+
+  createGroup(groupName: string, members: string[]): GroupSummary {
+    const newGroup: Group = {
+      id: this.autoGroupId++,
+      groupName,
+      members: members.map(this.createStudent, this)
+    };
+    this.groups.push(newGroup);
+
+    return this.createGroupSummary(newGroup);
+  }
+
+  createStudent(name: string): Student {
+    return {
+      id: this.autoStudentId++,
+      name
+    };
+  }
+
+  deleteGroup(id: number): boolean {
+    const index = this.findGroupIndex(id);
+    if (index != -1) {
+      this.groups.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+
+  findGroupIndex(id: number): number {
+    return this.groups.findIndex(group => group.id == id);
+  }
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 const app = express();
 const port = 3902;
 
 app.use(cors());
 app.use(express.json());
 
+const allGroups = new Groups();
+
 /**
  * Route to get all groups
  * @route GET /api/groups
- * @returns {Array} - Array of group objects
+ * @returns {GroupSummary[]} - Array of group objects
  */
 app.get('/api/groups', (req: Request, res: Response) => {
-  // TODO: (sample response below)
-  res.json([
-    {
-      id: 1,
-      groupName: 'Group 1',
-      members: [1, 2, 4],
-    },
-    {
-      id: 2,
-      groupName: 'Group 2',
-      members: [3, 5],
-    },
-  ]);
+  res.json(allGroups.getAllGroupSummaries());
 });
 
 /**
  * Route to get all students
  * @route GET /api/students
- * @returns {Array} - Array of student objects
+ * @returns {Student[]} - Array of student objects
  */
 app.get('/api/students', (req: Request, res: Response) => {
   // TODO: (sample response below)
-  res.json([
-    { id: 1, name: 'Alice' },
-    { id: 2, name: 'Bob' },
-    { id: 3, name: 'Charlie' },
-    { id: 4, name: 'David' },
-    { id: 5, name: 'Eve' },
-  ]);
+  res.json(allGroups.getAllStudents());
 });
 
 /**
  * Route to add a new group
  * @route POST /api/groups
  * @param {string} req.body.groupName - The name of the group
- * @param {Array} req.body.members - Array of member names
- * @returns {Object} - The created group object
+ * @param {string[]} req.body.members - Array of member names
+ * @returns {GroupSummary} - The created group object
  */
 app.post('/api/groups', (req: Request, res: Response) => {
-  // TODO: implement storage of a new group and return their info (sample response below)
-  res.json({
-    id: 3,
-    groupName: 'New Group',
-    members: [1, 2],
-  });
+  const { groupName, members } = req.body;
+  res.json(allGroups.createGroup(groupName, members));
 });
 
 /**
@@ -86,8 +135,8 @@ app.post('/api/groups', (req: Request, res: Response) => {
  * @returns {void} - Empty response with status code 204
  */
 app.delete('/api/groups/:id', (req: Request, res: Response) => {
-  // TODO: (delete the group with the specified id)
-
+  const id = parseInt(req.params.id);
+  allGroups.deleteGroup(id);
   res.sendStatus(204); // send back a 204 (do not modify this line)
 });
 
@@ -95,25 +144,17 @@ app.delete('/api/groups/:id', (req: Request, res: Response) => {
  * Route to get a group by ID (for fetching group members)
  * @route GET /api/groups/:id
  * @param {number} req.params.id - The ID of the group to retrieve
- * @returns {Object} - The group object with member details
+ * @returns {Group} - The group object with member details
  */
 app.get('/api/groups/:id', (req: Request, res: Response) => {
-  // TODO: (sample response below)
-  res.json({
-    id: 1,
-    groupName: 'Group 1',
-    members: [
-      { id: 1, name: 'Alice' },
-      { id: 2, name: 'Bob' },
-      { id: 3, name: 'Charlie' },
-    ],
-  });
+  const id = parseInt(req.params.id);
+  const group = allGroups.getGroup(id);
 
-  /* TODO:
-   * if (group id isn't valid) {
-   *   res.status(404).send("Group not found");
-   * }
-   */
+  if (group == undefined) {
+    res.status(404).send("Group not found");
+  } else {
+    res.json(group);
+  }
 });
 
 app.listen(port, () => {
