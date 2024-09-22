@@ -17,89 +17,91 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+class Student:
+    __slots__ = 'student_id', 'name'
+
+    def __init__(self, student_id: int, name: str):
+        self.student_id = student_id
+        self.name = name
+
+    def to_dict(self) -> dict[str]:
+        return { "id": self.student_id, "name": self.name }
+
 class Group:
-    def __init__(self, group_id: int, group_name: str, group_members: list[int]) -> None:
+    __slots__ = 'group_id', 'group_name', 'members'
+
+    def __init__(self, group_id: int, group_name: str, members: list[Student]) -> None:
         self.group_id = group_id
         self.group_name = group_name
-        self.group_members = group_members
+        self.members = members
 
-    def to_dict(self) -> dict:
+    def to_summary(self) -> dict[str]:
         return {
             "id": self.group_id,
             "groupName": self.group_name,
-            "members": self.group_members
+            "members": [student.student_id for student in self.members]
+        }
+
+    def to_dict(self) -> dict[str]:
+        return {
+            "id": self.group_id,
+            "groupName": self.group_name,
+            "members": [student.to_dict() for student in self.members]
         }
 
 class Groups:
+    __slots__ = '_groups', '_auto_group_id', '_auto_member_id'
+
     def __init__(self) -> None:
-        self.groups: dict[int, Group] = {}
-        self.members: dict[int, str] = {}
-        self.auto_group_id = 0
-        self.auto_member_id = 0
+        self._groups: dict[int, Group] = {}
+        self._auto_group_id = 0
+        self._auto_member_id = 0
+
+    def __getitem__(self, group_id) -> Group:
+        return self._groups[group_id]
+
+    def __iter__(self):
+        return iter(self._groups.values())
 
     @property
     def next_group_id(self) -> int:
-        self.auto_group_id += 1
-        return self.auto_group_id
+        temp = self._auto_group_id
+        self._auto_group_id += 1
+        return temp
 
     @property
     def next_member_id(self) -> int:
-        self.auto_member_id += 1
-        return self.auto_member_id
+        temp = self._auto_member_id
+        self._auto_member_id += 1
+        return temp
 
-    def group_id_exists(self, group_id) -> bool:
-        return group_id in self.groups
-
-    def member_id_exists(self, member_id) -> bool:
-        return member_id in self.members
+    def group_id_exists(self, group_id: int) -> bool:
+        return group_id in self._groups
 
     def add_group(self, group_name: str, group_members: list[str]) -> Group:
-        # Add members
-        member_ids = []
-        for member in group_members:
-            member_id = self.next_member_id
-            self.members[member_id] = member
-            member_ids.append(member_id)
-
-        # Add group
-        new_group = Group(self.next_group_id, group_name, member_ids)
-        self.groups[new_group.group_id] = new_group
-
+        members = [Student(self.next_member_id, name) for name in group_members]
+        new_group = Group(self.next_group_id, group_name, members)
+        self._groups[new_group.group_id] = new_group
         return new_group
 
-    def get_group(self, group_id) -> Group:
-        return self.groups[group_id]
-
-    def delete_member(self, member_id) -> bool:
-        if self.member_id_exists(member_id):
-            self.members.pop(member_id)
+    def delete_group(self, group_id: int) -> bool:
+        # Delete group
+        if self.group_id_exists(group_id):
+            self._groups.pop(group_id)
             return True
         return False
 
-    def delete_group(self, group_id) -> bool:
-        # Delete group
-        if self.group_id_exists(group_id):
-            deleted_group = self.groups.pop(group_id)
-            return all(self.delete_member(member_id) for member_id in deleted_group.group_members)
-        return False
-
-    def get_member_dict(self, member_id) -> dict:
-        return { "id": member_id, "name": self.members[member_id] }
-
     def get_group_dict(self, group_id) -> dict:
-        group_dict = self.get_group(group_id).to_dict()
+        return self[group_id].to_dict()
 
-        # Map members to list[dict]
-        member_ids = group_dict['members']
-        group_dict['members'] = [self.get_member_dict(member_id) for member_id in member_ids]
-
-        return group_dict
-
-    def get_groups_dict(self) -> list[dict]:
-        return [group.to_dict() for group in self.groups.values()]
+    def get_group_summaries(self) -> list[dict]:
+        return [group.to_dict() for group in self._groups.values()]
 
     def get_members_dict(self) -> list[dict]:
-        return [self.get_member_dict(member_id) for member_id in self.members]
+        return [student.to_dict() for group in self._groups.values() for student in group.members]
+
+def is_invalid_name(name: str) -> bool:
+    return not name.isalpha()
 
 all_groups = Groups()
 
@@ -109,7 +111,7 @@ def get_groups():
     Route to get all groups
     return: Array of group objects
     """
-    response = jsonify(all_groups.get_groups_dict())
+    response = jsonify(all_groups.get_group_summaries())
     app.logger.debug(response.json)
     return response
 
@@ -131,13 +133,16 @@ def create_group():
     param members: Array of member names (from request body)
     return: The created group object
     """
-    
+
     # Getting the request body (DO NOT MODIFY)
     group_data = request.json
     group_name = group_data.get("groupName")
     group_members = group_data.get("members")
-    
+
     # Add a new group
+    if any(is_invalid_name(name) for name in [group_name, *group_members]):
+        abort(400, 'A name given is not fully alphabetical')
+
     new_group = all_groups.add_group(group_name, group_members)
 
     response = jsonify(new_group.to_dict())
@@ -145,26 +150,27 @@ def create_group():
     return response, 201
 
 @app.route('/api/groups/<int:group_id>', methods=['DELETE'])
-def delete_group(group_id):
+def delete_group(group_id: int):
     """
     Route to delete a group by ID
     param group_id: The ID of the group to delete
     return: Empty response with status code 204
     """
-    all_groups.delete_group(group_id)
+    if not all_groups.group_id_exists(group_id):
+        abort(404, 'Group not found')
 
-    app.logger.debug(all_groups.get_groups_dict())
+    all_groups.delete_group(group_id)
     return '', 204  # Return 204 (do not modify this line)
 
 @app.route('/api/groups/<int:group_id>', methods=['GET'])
-def get_group(group_id):
+def get_group(group_id: int):
     """
     Route to get a group by ID (for fetching group members)
     param group_id: The ID of the group to retrieve
     return: The group object with member details
     """
     if not all_groups.group_id_exists(group_id):
-        abort(404, "Group not found")
+        abort(404, 'Group not found')
 
     response = jsonify(all_groups.get_group_dict(group_id))
     app.logger.debug(response.json)

@@ -1,7 +1,6 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 
-
 // NOTE: you may modify these interfaces
 interface Student {
   id: number;
@@ -112,7 +111,6 @@ app.get('/api/groups', (req: Request, res: Response) => {
  * @returns {Student[]} - Array of student objects
  */
 app.get('/api/students', (req: Request, res: Response) => {
-  // TODO: (sample response below)
   res.json(allGroups.getAllStudents());
 });
 
