@@ -1,3 +1,21 @@
+/**
+ * Student Management System: Allows easy organisation of students into groups, tracking group/student names and quantity.
+ * 
+ * Assumptions:
+ *  - Group/Student IDs are unique
+ *  - When a Group is deleted, all containing students are also deleted
+ *  - There is no maximum number of Groups/Students
+ *  - Group/Student Name must be alphanumeric (e.g., Group 1, Mike! or J3nny)
+ * 
+ * Edge Cases:
+ *  - Groups cannot be empty (since Groups cannot be edited)
+ *    - Aborts with 400
+ *  - Group/Student Name cannot be empty
+ *    - Aborts with 400
+ *  - Users cannot GET/DELETE non-existent Group IDs
+ *    - Aborts with 404
+ */
+
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 
@@ -31,22 +49,34 @@ class Groups {
     this.autoStudentId = 0;
   }
 
+  /**
+   * Returns a Group object with the specified ID.
+   * @returns {Group | undefined} - If found, a group object
+   */
   getGroup(id: number): Group | undefined {
     return this.groups.find(group => group.id == id);
   }
 
-  getAllGroups(): Group[] {
-    return this.groups;
-  }
-
+  /**
+   * Returns the Summaries of all existing Groups.
+   * @returns {GroupSummary[]} - Array of group summaries
+   */
   getAllGroupSummaries(): GroupSummary[] {
     return this.groups.map(this.createGroupSummary);
   }
 
+  /**
+   * Returns all existing Student objects.
+   * @returns {Student[]} - Array of student objects
+   */
   getAllStudents(): Student[] {
     return this.groups.flatMap(group => group.members);
   }
 
+  /**
+   * Creates a Summary of the given Group.
+   * @returns {GroupSummary} - A group summary
+   */
   createGroupSummary(group: Group): GroupSummary {
     return {
       id: group.id,
@@ -55,6 +85,10 @@ class Groups {
     };
   }
 
+  /**
+   * Stores a new Group with the given name and students and returns the Group.
+   * @returns {GroupSummary} - A group summary
+   */
   createGroup(groupName: string, members: string[]): GroupSummary {
     const newGroup: Group = {
       id: this.autoGroupId++,
@@ -66,6 +100,10 @@ class Groups {
     return this.createGroupSummary(newGroup);
   }
 
+  /**
+   * Creates a new Student with the given name and returns the Student.
+   * @returns {Student} - A student
+   */
   createStudent(name: string): Student {
     return {
       id: this.autoStudentId++,
@@ -73,18 +111,24 @@ class Groups {
     };
   }
 
+  /**
+   * Checks if the given ID exists and attempts to delete the corresponding Group and Students.
+   * @returns {boolean} - Returns True if the deletion was successful
+   */
   deleteGroup(id: number): boolean {
-    const index = this.findGroupIndex(id);
+    const index = this.groups.findIndex(group => group.id == id);;
     if (index != -1) {
       this.groups.splice(index, 1);
       return true;
     }
     return false;
   }
+}
 
-  findGroupIndex(id: number): number {
-    return this.groups.findIndex(group => group.id == id);
-  }
+function is_invalid_name(name: string): boolean {
+  name = name.trim();
+  const is_valid = name.length > 0 && name.match(/^[a-zA-Z0-9 ]+$/);
+  return !is_valid;
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -123,6 +167,22 @@ app.get('/api/students', (req: Request, res: Response) => {
  */
 app.post('/api/groups', (req: Request, res: Response) => {
   const { groupName, members } = req.body;
+
+  // Edge case 1: Groups cannot be empty
+  if (members.length == 0) {
+    res.status(400).send("Groups cannot be empty!");
+    return;
+  }
+
+  // Edge case 2: Check if any name is invalid
+  for (const name of [groupName].concat(members)) {
+    if (is_invalid_name(name)) {
+      res.status(400).send(`The following name is invalid: ${name}`);
+      return;
+    }
+  }
+
+  // Add a new group
   res.json(allGroups.createGroup(groupName, members));
 });
 
@@ -134,7 +194,20 @@ app.post('/api/groups', (req: Request, res: Response) => {
  */
 app.delete('/api/groups/:id', (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
-  allGroups.deleteGroup(id);
+
+  // Edge case 3: Cannot DELETE invalid IDs
+  const group = allGroups.getGroup(id);
+  if (group == undefined) {
+    res.status(404).send(`Group not found with ID: ${id}`);
+    return;
+  }
+
+  // Internal server error: could not delete group for some reason
+  if (!allGroups.deleteGroup(id)) {
+    res.status(500).send(`Could not delete group with ID: ${id}`);
+    return;
+  }
+
   res.sendStatus(204); // send back a 204 (do not modify this line)
 });
 
@@ -146,13 +219,15 @@ app.delete('/api/groups/:id', (req: Request, res: Response) => {
  */
 app.get('/api/groups/:id', (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
+  
+  // Edge case 3: Cannot GET invalid IDs
   const group = allGroups.getGroup(id);
-
   if (group == undefined) {
-    res.status(404).send("Group not found");
-  } else {
-    res.json(group);
+    res.status(404).send(`Group not found with ID: ${id}`);
+    return;
   }
+  
+  res.json(group);
 });
 
 app.listen(port, () => {

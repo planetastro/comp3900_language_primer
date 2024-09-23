@@ -99,22 +99,23 @@ class Groups:
         return new_group
 
     def delete_group(self, group_id: int) -> bool:
-        """Returns True if the given Group ID exists and the specified Group was successfully deleted."""
+        """Checks if the given ID exists and attempts to delete the corresponding Group and Students.
+        Returns True if the deletion was successful."""
         if self.group_id_exists(group_id):
             self._groups.pop(group_id)
             return True
         return False
 
-    def get_group_dict(self, group_id) -> dict:
-        """Returns the details of a Group."""
+    def get_group(self, group_id) -> dict:
+        """Returns a Group object with the specified ID."""
         return self[group_id].inner()
 
-    def get_group_summaries(self) -> list[dict]:
-        """Returns all the Summaries of the currently-existing Groups."""
+    def get_all_group_summaries(self) -> list[dict]:
+        """Returns the Summaries of all existing Groups."""
         return [group.summary() for group in self._groups.values()]
 
-    def get_members_dict(self) -> list[dict]:
-        """Returns the details of all Students."""
+    def get_all_members(self) -> list[dict]:
+        """Returns all existing Student objects."""
         return [student.inner() for group in self._groups.values() for student in group.members]
 
 def is_invalid_name(name: str) -> bool:
@@ -136,7 +137,7 @@ def get_groups():
     Route to get all groups
     return: Array of group objects
     """
-    return create_json_response(all_groups.get_group_summaries())
+    return create_json_response(all_groups.get_all_group_summaries())
 
 @app.route('/api/students', methods=['GET'])
 def get_students():
@@ -144,7 +145,7 @@ def get_students():
     Route to get all students
     return: Array of student objects
     """
-    return create_json_response(all_groups.get_members_dict())
+    return create_json_response(all_groups.get_all_members())
 
 @app.route('/api/groups', methods=['POST'])
 def create_group():
@@ -162,9 +163,9 @@ def create_group():
 
     # Edge case 1: Groups cannot be empty
     if len(group_members) == 0:
-        abort()
+        abort(400, f"Groups cannot be empty!")
 
-    # Check if any name is invalid
+    # Edge case 2: Check if any name is invalid
     for name in [group_name, *group_members]:
         if is_invalid_name(name):
             abort(400, f"The following name is invalid: {name}")
@@ -180,10 +181,14 @@ def delete_group(group_id: int):
     param group_id: The ID of the group to delete
     return: Empty response with status code 204
     """
+    # Edge case 3: Cannot DELETE invalid IDs
     if not all_groups.group_id_exists(group_id):
-        abort(404, 'Group not found')
+        abort(404, f"Group not found with ID: {group_id}")
 
-    all_groups.delete_group(group_id)
+    # Internal server error: could not delete group for some reason
+    if not all_groups.delete_group(group_id):
+        abort(500, f"Could not delete group with ID: {group_id}")
+
     return '', 204  # Return 204 (do not modify this line)
 
 @app.route('/api/groups/<int:group_id>', methods=['GET'])
@@ -193,10 +198,11 @@ def get_group(group_id: int):
     param group_id: The ID of the group to retrieve
     return: The group object with member details
     """
+    # Edge case 3: Cannot GET invalid IDs
     if not all_groups.group_id_exists(group_id):
-        abort(404, 'Group not found')
+        abort(404, f"Group not found with ID: {group_id}")
 
-    return create_json_response(all_groups.get_group_dict(group_id))
+    return create_json_response(all_groups.get_group(group_id))
 
 if __name__ == '__main__':
     app.run(port=3902, debug=True)
