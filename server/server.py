@@ -163,7 +163,7 @@ def create_group():
 
     # Edge case 1: Groups cannot be empty
     if len(group_members) == 0:
-        abort(400, f"Groups cannot be empty!")
+        abort(400, 'Groups cannot be empty!')
 
     # Edge case 2: Check if any name is invalid
     for name in [group_name, *group_members]:
